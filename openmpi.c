@@ -1,5 +1,5 @@
 /*
-compilation: mpicc -fopenmp openmpi.c
+compilation: mpicc -fopenmp openmpi.c -lm
 run: mpiexec -n <processes> ./a.out width height type loops
 */
 
