@@ -31,10 +31,7 @@ typedef struct destination{
 
 MPI_Status status;
 
-typedef int CHECK_SIMILARITY;
-
-#define true 1
-#define false 0
+#define CHECK_SIMILARITY 0
 
 /*----------------------------------------------------------------------------*/
 
@@ -46,8 +43,8 @@ void perror_exit(const char *message){
 }
 
 static inline __attribute__((always_inline))
-int check_similarity(uint8_t *t0, uint8_t *t1, int pos){
-    if(t0[pos]!=t1[pos])
+int check_similarity(uint8_t *t0, uint8_t **t1, int pos){
+    if(t0[pos]!=(*t1)[pos])
         return 1;
     else
         return 0;
@@ -79,28 +76,24 @@ int convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol,
 
             (*t1)[bytes*(cols+2) * i + bytes*j] = val;
 
-            if ((flag == 1) && (check == 0)){
+            /* We check for similarity under 2 circumstances:
+               1. When inner data convolution takes place
+               2. No differences between bytes have been found so far
+            */
+            if ((flag) && (!check) && (CHECK_SIMILARITY))
+                check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j));
 
-                #ifdef CHECK_SIMILARITY
-                    check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j))
-                #endif
-
-            }
             if(bytes==3){
 		        (*t1)[bytes*(cols+2) * i + bytes*j+1] = gval;
 		        (*t1)[bytes*(cols+2) * i + bytes*j+2] = bval;
 
-                if ((flag == 1) && (check == 0)){
-
-                    #ifdef CHECK_SIMILARITY
-                        check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j+1))
-                    #endif
-
+                if ((flag) && (!check) && (CHECK_SIMILARITY)){
+                    check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j+1));
+                    check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j+2));
                 }
 	        }
 	    }
     }
-
     return check;
 }
 
@@ -109,6 +102,7 @@ int convolution(MPI_Datatype row_datatype, MPI_Datatype col_datatype, int rows, 
 
     int flag;
 
+    /*gaussian blur*/
     float h[3][3] = {{1/16.0, 2/16.0, 1/16.0}, {2/16.0, 4/16.0, 2/16.0}, {1/16.0, 2/16.0, 1/16.0}};
 
     MPI_Request send_req[4], recv_req[4];
@@ -230,9 +224,7 @@ void parallel_write(int my_rank, int _div, int rows_per_proc, int cols_per_proc,
     free(out);
 }
 
-/* searching the best number to devide
-   height and width to each process
-   */
+/* Searching the best number to devide height and width for each process */
 void array_div(int num_processes, coords** subarray, int width, int height){
     (*subarray)->_div = sqrt((double)num_processes);
     (*subarray)->rows = height / (*subarray)->_div;
@@ -301,26 +293,34 @@ int main(int argc, char **argv){
 
     MPI_Barrier(MPI_COMM_WORLD);
 
+    /*The actual loop*/
+    /*Convoluting image a number of times*/
     double global_timer = 0.0, local_timer = MPI_Wtime();
     for(int i=0; i<loops; i++){
 
         int local_flag, global_sum;
         local_flag = convolution(row_datatype,column_datatype,rows_per_proc,cols_per_proc,bytes,&p,t0,&t1);
 
+        /*Checking for similarity between src and dest image*/
         if (CHECK_SIMILARITY){
             MPI_Allreduce(&local_flag, &global_sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-            if(global_sum >= comm_sz)
+            if(global_sum == 0){
+                if(my_rank == 0)
+                    printf("Convolution is not producing a new image. Breaking the loop ...\n");
                 break;
+            }
         }
 
+        /*Swap arrays*/
         uint8_t *tmp = t0;
         t0  = t1;
         t1 = tmp;
     }
     local_timer = MPI_Wtime() - local_timer;
 
+    /*Finding the slowest process*/
     MPI_Reduce(&local_timer, &global_timer, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    if(my_rank == Master_Process)
+    if(my_rank == 0)
         printf("Elapsed Time: %.4lf\n", global_timer);
 
     parallel_write(my_rank,_div,rows_per_proc,cols_per_proc,bytes,width,t0);
