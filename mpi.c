@@ -1,5 +1,5 @@
 /*
-compilation: mpicc mpi.c
+compilation: mpicc mpi.c -lm
 run: mpiexec -f <machines> -n <processes> ./a.out width hight type loops
 */
 
