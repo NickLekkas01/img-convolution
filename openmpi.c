@@ -27,8 +27,6 @@ run: mpiexec -n <processes> ./a.out width height type loops
 #define filename1 "waterfall_grey_1920_2520.raw"
 #define filename2 "waterfall_1920_2520.raw"
 
-#define Master_Process 0
-
 typedef struct subarray{
     int cols;
     int rows;
@@ -42,6 +40,12 @@ typedef struct destination{
     int south;
 }dest_processes;
 
+MPI_Status status;
+
+#define CHECK_SIMILARITY 0
+
+/*----------------------------------------------------------------------------*/
+
 /* exit failure */
 void perror_exit(const char *message){
     perror(message);
@@ -49,16 +53,24 @@ void perror_exit(const char *message){
     exit(EXIT_FAILURE);
 }
 
-MPI_Status status;
+static inline __attribute__((always_inline))
+int check_similarity(uint8_t *t0, uint8_t **t1, int pos){
+    if(t0[pos]!=(*t1)[pos])
+        return 1;
+    else
+        return 0;
+}
 
 static inline __attribute__((always_inline))
-void convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol, int cols, int bytes, float h[3][3]){
+int convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol, int cols, int bytes, float h[3][3], int flag){
+
+    int check = 0;
 
     #pragma omp parallel for num_threads(1) collapse(2) schedule(static)
+
     for (int i = srow; i < lrow +1; i++){
         for (int j = scol; j < lcol +1; j++){
             float val = 0, bval = 0, gval = 0;
-
             int x=0;
             for (int k = i-1; k <= i+1; k++){
 
@@ -69,6 +81,7 @@ void convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol
 		    	        gval += t0[bytes*(cols+2) * k + l+1] * h[x][y];
 			            bval += t0[bytes*(cols+2) * k + l+2] * h[x][y];
 		            }
+
 		            y++;
 		        }
 
@@ -76,17 +89,34 @@ void convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol
 	        }
 
             (*t1)[bytes*(cols+2) * i + bytes*j] = val;
-	        if(bytes==3){
+
+            /* We check for similarity under 2 circumstances:
+               1. When inner data convolution takes place
+               2. No differences between bytes have been found so far
+            */
+            if ((flag) && (!check) && (CHECK_SIMILARITY))
+                check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j));
+
+            if(bytes==3){
 		        (*t1)[bytes*(cols+2) * i + bytes*j+1] = gval;
 		        (*t1)[bytes*(cols+2) * i + bytes*j+2] = bval;
+
+                if ((flag) && (!check) && (CHECK_SIMILARITY)){
+                    check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j+1));
+                    check = check_similarity(t0,t1,(bytes*(cols+2) * i + bytes*j+2));
+                }
 	        }
 	    }
     }
+    return check;
 }
 
 static inline __attribute__((always_inline))
-void convolution(MPI_Datatype row_datatype, MPI_Datatype col_datatype, int rows, int cols, int bytes, dest_processes** p, uint8_t *t0,uint8_t **t1){
+int convolution(MPI_Datatype row_datatype, MPI_Datatype col_datatype, int rows, int cols, int bytes, dest_processes** p, uint8_t *t0,uint8_t **t1){
 
+    int flag;
+
+    /*gaussian blur*/
     float h[3][3] = {{1/16.0, 2/16.0, 1/16.0}, {2/16.0, 4/16.0, 2/16.0}, {1/16.0, 2/16.0, 1/16.0}};
 
     MPI_Request send_req[4], recv_req[4];
@@ -105,43 +135,47 @@ void convolution(MPI_Datatype row_datatype, MPI_Datatype col_datatype, int rows,
 
 
     /* compute inner data */
-    convolute(t0,t1,1,1,rows,cols,cols,bytes,h);
+    flag = 1;
+    int check = convolute(t0,t1,1,1,rows,cols,cols,bytes,h,flag);
+    flag = 0;
 
     /* compute outer data */
     if ((*p)->north != MPI_PROC_NULL){
         MPI_Wait(&recv_req[0], &status);
-        convolute(t0,t1,1,2,1,cols-1,cols,bytes,h);
+        convolute(t0,t1,1,2,1,cols-1,cols,bytes,h,flag);
     }
 
     if ((*p)->west != MPI_PROC_NULL){
         MPI_Wait(&recv_req[1], &status);
-        convolute(t0,t1,2,1,rows-1,1,cols,bytes,h);
+        convolute(t0,t1,2,1,rows-1,1,cols,bytes,h,flag);
     }
 
     if ((*p)->south != MPI_PROC_NULL){
         MPI_Wait(&recv_req[2], &status);
-        convolute(t0,t1,rows,2,rows,cols-1,cols,bytes,h);
+        convolute(t0,t1,rows,2,rows,cols-1,cols,bytes,h,flag);
     }
 
     if ((*p)->east != MPI_PROC_NULL){
         MPI_Wait(&recv_req[3], &status);
-        convolute(t0,t1,2,cols,rows-1,cols,cols,bytes,h);
+        convolute(t0,t1,2,cols,rows-1,cols,cols,bytes,h,flag);
     }
 
     if (((*p)->north != MPI_PROC_NULL) && ((*p)->west != MPI_PROC_NULL))
-        convolute(t0,t1,1,1,1,1,cols,bytes,h);
+        convolute(t0,t1,1,1,1,1,cols,bytes,h,flag);
     if (((*p)->south != MPI_PROC_NULL) && ((*p)->west != MPI_PROC_NULL))
-        convolute(t0,t1,rows,1,rows,1,cols,bytes,h);
+        convolute(t0,t1,rows,1,rows,1,cols,bytes,h,flag);
     if (((*p)->north != MPI_PROC_NULL) && ((*p)->east != MPI_PROC_NULL))
-        convolute(t0,t1,cols,cols,cols,rows,cols,bytes,h);
+        convolute(t0,t1,cols,cols,cols,rows,cols,bytes,h,flag);
     if (((*p)->south != MPI_PROC_NULL) && ((*p)->east != MPI_PROC_NULL))
-        convolute(t0,t1,rows,cols,rows,cols,cols,bytes,h);
+        convolute(t0,t1,rows,cols,rows,cols,cols,bytes,h,flag);
 
     /* wait for all processes to finish */
     if ((*p)->north != MPI_PROC_NULL)  MPI_Wait(&send_req[0], &status);
     if ((*p)->west != MPI_PROC_NULL)   MPI_Wait(&send_req[1], &status);
     if ((*p)->south != MPI_PROC_NULL)  MPI_Wait(&send_req[2], &status);
     if ((*p)->east != MPI_PROC_NULL)   MPI_Wait(&send_req[3], &status);
+
+    return check;
 }
 
 void compute_neighbors(int my_rank, int num_processes, int _div, dest_processes** p){
@@ -204,9 +238,7 @@ void parallel_write(int my_rank, int _div, int rows_per_proc, int cols_per_proc,
     free(out);
 }
 
-/* searching the best number to devide
-   height and width to each process
-   */
+/* Searching the best number to devide height and width for each process */
 void array_div(int num_processes, coords** subarray, int width, int height){
     (*subarray)->_div = sqrt((double)num_processes);
     (*subarray)->rows = height / (*subarray)->_div;
@@ -224,7 +256,7 @@ int main(int argc, char **argv){
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
 
     /* if I am master process */
-    if(my_rank == Master_Process){
+    if(my_rank == 0){
 
         coords* subarray = (coords*)malloc(sizeof(coords));
 
@@ -275,17 +307,34 @@ int main(int argc, char **argv){
 
     MPI_Barrier(MPI_COMM_WORLD);
 
+    /*The actual loop*/
+    /*Convoluting image a number of times*/
     double global_timer = 0.0, local_timer = MPI_Wtime();
     for(int i=0; i<loops; i++){
-        convolution(row_datatype,column_datatype,rows_per_proc,cols_per_proc,bytes,&p,t0,&t1);
+
+        int local_flag, global_sum;
+        local_flag = convolution(row_datatype,column_datatype,rows_per_proc,cols_per_proc,bytes,&p,t0,&t1);
+
+        /*Checking for similarity between src and dest image*/
+        if (CHECK_SIMILARITY){
+            MPI_Allreduce(&local_flag, &global_sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+            if(global_sum == 0){
+                if(my_rank == 0)
+                    printf("Convolution is not producing a new image. Breaking the loop ...\n");
+                break;
+            }
+        }
+
+        /*Swap arrays*/
         uint8_t *tmp = t0;
         t0  = t1;
         t1 = tmp;
     }
     local_timer = MPI_Wtime() - local_timer;
 
+    /*Finding the slowest process*/
     MPI_Reduce(&local_timer, &global_timer, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    if(my_rank == Master_Process)
+    if(my_rank == 0)
         printf("Elapsed Time: %.4lf\n", global_timer);
 
     parallel_write(my_rank,_div,rows_per_proc,cols_per_proc,bytes,width,t0);
