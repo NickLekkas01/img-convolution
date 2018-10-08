@@ -44,7 +44,7 @@ MPI_Status status;
 
 #define CHECK_SIMILARITY 0
 
-/*----------------------------------------------------------------------------*/
+
 
 /* exit failure */
 void perror_exit(const char *message){
