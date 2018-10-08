@@ -71,7 +71,7 @@ int convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol,
 		      y++;
 		 }
                  x++;
-	    }
+	     }
 
             (*t1)[bytes*(cols+2) * i + bytes*j] = val;
 
