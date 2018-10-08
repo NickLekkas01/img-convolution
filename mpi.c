@@ -61,7 +61,7 @@ int convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol,
             int x=0;
             for (int k = i-1; k <= i+1; k++){
 
-                int y=0;
+               int y=0;
 		for (int l = bytes*j - bytes; l <= bytes*j + bytes ; l += bytes){
 		    val += t0[bytes*(cols+2) * k + l] * h[x][y];
 		     if(bytes==3){
