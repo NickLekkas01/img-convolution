@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <assert.h>
 
-#define CHECK_SIMILARITY
-
 typedef struct image_info {
 	int cols;
 	int rows;
@@ -18,9 +16,9 @@ typedef struct input_data {
 	int height;
 	int bytes_per_pixel;
 	int times;
+	int flag;
 	char *input_file;
 } input_data_t;
-
 
 ///        ARRAY DIVISION AND USAGE        ///
 
@@ -88,12 +86,13 @@ int Get_input(int my_rank, int comm_sz, int argc, char **argv, input_data_t *inp
 	input_data->input_file = calloc(strlen(argv[1]) + 1, sizeof(char));
 	strcpy(input_data->input_file, argv[1]);
 	if(my_rank == 0) {
-		if(argc == 6) {
+		if(argc == 7) {
 			input_data->width = atoi(argv[2]);
 			input_data->height = atoi(argv[3]);
 			input_data->bytes_per_pixel = atoi(argv[4]);
 			input_data->times = atoi(argv[5]);
-
+			// NOTE(maria): flag refers to similarity check
+			input_data->flag = atoi(argv[6]);
 			width_div = split_dimensions(input_data->width, input_data->height, comm_sz);
 			if(!width_div) {
 				fprintf(stderr, "[%s]: Could not split dimensions\n", argv[0]);
@@ -101,7 +100,7 @@ int Get_input(int my_rank, int comm_sz, int argc, char **argv, input_data_t *inp
 			}
 		} else {
 			if(my_rank == 0)
-				fprintf(stderr, "[%s]: Usage: %s [input_file] [width] [height] [bytes per pixel] [times]\n", argv[0], argv[0]);
+				fprintf(stderr, "[%s]: Usage: %s [input_file] [width] [height] [bytes per pixel] [times] [flag]\n", argv[0], argv[0]);
 			success = 0;
 		}
 	}
@@ -115,6 +114,7 @@ int Get_input(int my_rank, int comm_sz, int argc, char **argv, input_data_t *inp
 		MPI_Bcast(&(input_data->height), 1, MPI_INT, 0, MPI_COMM_WORLD);
 		MPI_Bcast(&(input_data->bytes_per_pixel), 1, MPI_INT, 0, MPI_COMM_WORLD);
 		MPI_Bcast(&(input_data->times), 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(&(input_data->flag), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 		return width_div;
 	}
@@ -235,7 +235,7 @@ int check_similarity(uint8_t *cache_in, uint8_t *cache_out, int pos){
     return 0;       // false
 }
 
-void fill_pixels(int curr_row, int curr_col, int width, uint8_t *start_data, uint8_t *cache_out, float *conv_matrix, int* check) {
+int fill_pixels(int curr_row, int curr_col, int width, uint8_t *start_data, uint8_t *cache_out, float *conv_matrix, int check, int CHECK_SIMILARITY) {
 	float pixel = 0;
 	int k = 0;
 	for(int i = curr_row - 1; i <= curr_row + 1; ++i)
@@ -244,21 +244,25 @@ void fill_pixels(int curr_row, int curr_col, int width, uint8_t *start_data, uin
 
 	cache_out[curr_row * width + curr_col] = pixel;
 
-#   ifdef CHECK_SIMILARITY
-        if(*check!=1)
-            *check = check_similarity(start_data,cache_out,(curr_row * width + curr_col))
-#   endif
+	// NOTE(maria): If at least 1 pixel is diff
+	// we do not need to check again
+ 	if ((CHECK_SIMILARITY) && (!check))
+    	check = check_similarity(start_data,cache_out,(curr_row * width + curr_col));
+
+	return check;
 }
 
 ///        CONVOLUTION       ///
 
-void compute(uint8_t *cache_in, uint8_t *cache_out, int start_row, int end_row, int start_col, int end_col, int width, float *convolution_matrix, long int avail_threads) {
+int compute(uint8_t *cache_in, uint8_t *cache_out, int start_row, int end_row, int start_col, int end_col, int width, float *convolution_matrix, long int avail_threads, int CHECK_SIMILARITY) {
 
     int check = 0;
 	int row, col;
 	for(row = start_row; row <= end_row; ++row)
-		for(col = start_col; col <= end_col; ++col){
-		     check = fill_pixels(row, col, width, cache_in, cache_out, convolution_matrix, &check);
+		for(col = start_col; col <= end_col; ++col)
+			  //NOTE (maria): check refers to whether img is changed or not
+		      check = fill_pixels(row, col, width, cache_in, cache_out, convolution_matrix, check, CHECK_SIMILARITY);
+    return check;
 }
 
 void normalize_kernel(float *conv_matrix) {
@@ -317,6 +321,7 @@ int main(int argc, char **argv) {
 	int cols = image_info.cols;
 	int rows = image_info.rows;
 	int times = input_data.times;
+	int CHECK_SIMILARITY = input_data.flag;
 
 	// Track where each process's rectangle is in the whole image.
 	start_row = (my_rank / width_div) * image_info.rows;
@@ -392,9 +397,11 @@ int main(int argc, char **argv) {
 		MPI_Irecv(src + (cols+2) - 1, 1, col_type, right, 0, MPI_COMM_WORLD, &recv_req[3]);
 
 		// compute inner data
+        int local_flag;
 		for(int color = 0; color != bytes_per_pixel; ++color) {
-			compute(src, dst, color * (rows+2) + 1, (color+1) * (rows+2) - 2,
-				1, cols, cols + 2, convolution_matrix, 0);
+			// NOTE(maria): We check similarity only in inner data conv
+		    local_flag = compute(src, dst, color * (rows+2) + 1, (color+1) * (rows+2) - 2,
+				1, cols, cols + 2, convolution_matrix, 0, CHECK_SIMILARITY);
 		}
 
 		MPI_Wait(&recv_req[0], MPI_STATUS_IGNORE);
@@ -402,32 +409,34 @@ int main(int argc, char **argv) {
 		MPI_Wait(&recv_req[2], MPI_STATUS_IGNORE);
 		MPI_Wait(&recv_req[3], MPI_STATUS_IGNORE);
 
-		// Compute outer data
+		/// Compute outer data ///
+		// NOTE(maria): Last parameter is initilized to 0
+		// in order to skip similarity_check
 		if(top != MPI_PROC_NULL) {
 			for(int color = 0; color != bytes_per_pixel; ++color) {
 				compute(src, dst, color * (rows+2) + 1, color * (rows+2) + 1,
-					1, cols, cols + 2, convolution_matrix, 0);
+					1, cols, cols + 2, convolution_matrix, 0, 0);
 			}
 		}
 
 		if(bottom != MPI_PROC_NULL) {
 			for(int color = 0; color != bytes_per_pixel; ++color) {
 				compute(src, dst, (color+1) * (rows+2) - 2, (color+1) * (rows+2) - 2,
-					1, cols, cols + 2, convolution_matrix, 0);
+					1, cols, cols + 2, convolution_matrix, 0, 0);
 			}
 		}
 
 		if(left != MPI_PROC_NULL) {
 			for(int color = 0; color != bytes_per_pixel; ++color) {
 				compute(src, dst, color * (rows+2) + 1, (color+1) * (rows+2) - 2,
-					1, 1, cols + 2, convolution_matrix, 0);
+					1, 1, cols + 2, convolution_matrix, 0, 0);
 			}
 		}
 
 		if(right != MPI_PROC_NULL) {
 			for(int color = 0; color != bytes_per_pixel; ++color) {
 				compute(src, dst, color * (rows+2) + 1, (color+1) * (rows+2) - 2,
-					cols, cols, cols + 2, convolution_matrix, 0);
+					cols, cols, cols + 2, convolution_matrix, 0, 0);
 			}
 		}
 
@@ -436,10 +445,16 @@ int main(int argc, char **argv) {
 		MPI_Wait(&send_req[2], MPI_STATUS_IGNORE);
 		MPI_Wait(&send_req[3], MPI_STATUS_IGNORE);
 
-#       ifdef CHECK_SIMILARITY
-            if (counter == SIMILARITY_FREQ)
-                check_similarity(src,dst);
-#        endif
+		// Check for similarity
+		// between src and dst image
+		if(CHECK_SIMILARITY){
+            int global_sum;
+            MPI_Allreduce(&local_flag,&global_sum,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+			//if sum == 0 none part of img
+			//is changed after convolution
+			if(global_sum == 0)
+                break;
+		}
 
         // Swap arrays
 		uint8_t *temp = src;
@@ -462,9 +477,8 @@ int main(int argc, char **argv) {
 
 	local_elapsed = MPI_Wtime() - local_elapsed;
 	MPI_Reduce(&local_elapsed, &elapsed, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-	if(my_rank == 0) {
+	if(my_rank == 0)
 		fprintf(stderr, "Read Data: %.15lf seconds\n", elapsed);
-	}
 
 	free(src);
 	free(input_data.input_file);
