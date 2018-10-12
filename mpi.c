@@ -479,7 +479,9 @@ int main(int argc, char **argv) {
 	MPI_Reduce(&local_elapsed, &elapsed, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 	if(my_rank == 0)
 		fprintf(stderr, "Read Data: %.15lf seconds\n", elapsed);
-
+	
+	
+	// NOTE (maria): Why dest isn't freed here (?) 
 	free(src);
 	free(input_data.input_file);
 
