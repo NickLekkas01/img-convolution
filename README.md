@@ -8,9 +8,8 @@ Applying image filters using Parallel Programming Techniques.
 
 Check your compiler's version of gcc by typing:
 
-```gcc --version ``` 
+```gcc --version ```  - 4.4 or newer version is required.
 
-4.4 or newer version is required.
 
 You also need to install. Type: 
 
