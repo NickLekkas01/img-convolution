@@ -37,4 +37,3 @@ Download source code by typing:
 ##### MPI & OPENMP: 
 ``` mpiexec -n <processes> ./a.out width hight type loops ``` 
 
-``` 
