@@ -66,7 +66,7 @@ int convolute(uint8_t *t0, uint8_t **t1, int srow, int scol, int lrow, int lcol,
 
     int check = 0;
 
-    #pragma omp parallel for num_threads(1) collapse(2) schedule(static)
+#   pragma omp parallel for num_threads(1) collapse(2) schedule(static)
 
     for (int i = srow; i < lrow +1; i++){
         for (int j = scol; j < lcol +1; j++){
