@@ -40,7 +40,6 @@ Download source code by typing:
 ### Εxamples
 
 
-Before           |          After
+   Before                  |          After
 :-------------------------:|:-------------------------:
-![](https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall_grey_1920_2520.raw)  |  
-![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)
+![](https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall_grey_1920_2520.raw)  |  ![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)
