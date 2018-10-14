@@ -11,7 +11,7 @@ Check your compiler's version of gcc by typing:
 ```gcc --version ```  - 4.4 or newer version is required.
 
 
-You also need to install. Type: 
+Τo install mpicc. Type: 
 
 ```apt install mpich```
 
