@@ -39,6 +39,10 @@ Download source code by typing:
 
 ### Εxamples
 
+<p float="left">
+  <img src="https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall_grey_1920_2520.raw" width="100" />
+  <img src="https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png" width="100" /> 
+</p>
 
    Before                  |          After
 :-------------------------:|:-------------------------:
