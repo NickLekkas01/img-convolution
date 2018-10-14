@@ -37,3 +37,8 @@ Download source code by typing:
 ##### MPI & OPENMP: 
 ``` mpiexec -n <processes> ./a.out width hight type loops ``` 
 
+### Εxamples
+
+          Before           |          After
+:-------------------------:|:-------------------------:
+![](https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall_grey_1920_2520.raw)  |  ![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)
