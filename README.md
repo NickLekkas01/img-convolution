@@ -32,10 +32,10 @@ Download source code by typing:
 ### Running
 
 ##### MPI: 
-``` mpiexec -f <machines> -n <processes> ./a.out width hight type loops ```
+``` mpiexec -f <machines> -n <processes> ./a.out width height type loops ```
 
 ##### MPI & OPENMP: 
-``` mpiexec -n <processes> ./a.out width hight type loops ``` 
+``` mpiexec -n <processes> ./a.out width height type loops ``` 
 
 ### Εxamples
 
