@@ -39,6 +39,8 @@ Download source code by typing:
 
 ### Εxamples
 
-   Before                  |          After
+   Before                  |          After 50 loops
 :-------------------------:|:-------------------------:
-![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)  |  ![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)
+![](https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall_grey.png)  |  ![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_wgrey.png)
+![](https://github.com/msiampou/Image-Convolution/blob/master/img/waterfall.png)  |  ![](https://github.com/msiampou/Image-Convolution/blob/master/img/blur_w.png)
+
