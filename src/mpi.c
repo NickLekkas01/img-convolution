@@ -1,6 +1,6 @@
 /*
 compilation: mpicc mpi.c -lm
-run: mpiexec -f <machines> -n <processes> ./a.out width hight type loops
+run: mpiexec -f <machines> -n <processes> ./a.out width height type loops
 */
 
 #include <stdio.h>
