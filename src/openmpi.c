@@ -1,6 +1,11 @@
 /*
-compilation: mpicc -fopenmp openmpi.c -lm
+compilation - openmp: mpicc -fopenmp openmpi.c -lm
 run: mpiexec -n <processes> ./a.out width height type loops
+*/
+
+/*
+compilation - mpi: mpicc mpi.c -lm
+run: mpiexec -f <machines> -n <processes> ./a.out width height type loops
 */
 
 #include <stdio.h>
