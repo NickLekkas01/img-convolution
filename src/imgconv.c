@@ -19,16 +19,6 @@ run: mpiexec -f <machines> -n <processes> ./a.out width height type loops
 #include <limits.h>
 #include <stdint.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <math.h>
-#include <mpi.h>
-#include <time.h>
-#include <limits.h>
-#include <stdint.h>
-
 #define filename1 "waterfall_grey_1920_2520.raw"
 #define filename2 "waterfall_1920_2520.raw"
 
